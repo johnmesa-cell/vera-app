@@ -13,6 +13,11 @@ data class SavingsGoal(
     init {
         require(id.isNotBlank()) { "El ID del objetivo de ahorro no puede estar vacío." }
         require(name.isNotBlank()) { "El nombre del objetivo de ahorro no puede estar vacío." }
+        require(targetAmount.isPositive()) { "El monto objetivo del ahorro debe ser estrictamente mayor a cero." }
+        require(currentAmount >= Money.ZERO) { "El monto actualmente reservado no puede ser negativo." }
+        require(currentAmount <= targetAmount) {
+            "El monto reservado ($currentAmount) no puede superar el monto objetivo ($targetAmount)."
+        }
     }
 
     /**
@@ -22,7 +27,11 @@ data class SavingsGoal(
         if (!amount.isPositive()) {
             throw InvalidAmountException(amount)
         }
-        return copy(currentAmount = currentAmount + amount)
+        val newAmount = currentAmount + amount
+        if (newAmount > targetAmount) {
+            throw DomainException("El depósito excede el monto objetivo fijado ($targetAmount) para la meta '$name'.")
+        }
+        return copy(currentAmount = newAmount)
     }
 
     /**

@@ -42,11 +42,11 @@ data class Family(
     fun getSavingsGoal(goalId: String): SavingsGoal? = savingsGoals.find { it.id == goalId }
 
     fun getMovementsForSharedAccount(): List<Movement> = movements.filter {
-        it.sourceAccountRef == AccountReference.SHARED || it.destinationAccountRef == AccountReference.SHARED
+        (it.sourceAccountRef == AccountReference.SHARED) || (it.destinationAccountRef == AccountReference.SHARED)
     }
 
     fun getMovementsForMember(memberId: String): List<Movement> = movements.filter {
-        it.sourceAccountRef?.memberId == memberId || it.destinationAccountRef?.memberId == memberId
+        (it.sourceAccountRef?.memberId == memberId) || (it.destinationAccountRef?.memberId == memberId)
     }
 
     // --- Operaciones de dominio ---
@@ -63,6 +63,7 @@ data class Family(
      * Registra un ingreso de dinero en la cuenta compartida familiar.
      */
     fun recordSharedIncome(movement: Movement): Family {
+        validateUniqueMovementId(movement.id)
         require(movement.type == MovementType.INCOME) { "El movimiento debe ser de tipo INCOME." }
         require(movement.destinationAccountRef == AccountReference.SHARED) { "El destino debe ser la cuenta compartida." }
 
@@ -77,6 +78,7 @@ data class Family(
      * Registra un gasto en la cuenta compartida familiar.
      */
     fun recordSharedExpense(movement: Movement): Family {
+        validateUniqueMovementId(movement.id)
         require(movement.type == MovementType.EXPENSE) { "El movimiento debe ser de tipo EXPENSE." }
         require(movement.sourceAccountRef == AccountReference.SHARED) { "El origen debe ser la cuenta compartida." }
 
@@ -98,6 +100,7 @@ data class Family(
         movementId: String,
         timestamp: Long = 0L,
     ): Family {
+        validateUniqueMovementId(movementId)
         val member = getMember(memberId)
             ?: throw DomainException("No se encontró el integrante con ID $memberId")
 
@@ -125,9 +128,48 @@ data class Family(
     }
 
     /**
+     * Devuelve (transfiere) dinero desde la cuenta personal de un integrante hacia la cuenta compartida familiar.
+     */
+    fun returnFromMember(
+        memberId: String,
+        amount: Money,
+        description: String,
+        categoryId: String,
+        movementId: String,
+        timestamp: Long = 0L,
+    ): Family {
+        validateUniqueMovementId(movementId)
+        val member = getMember(memberId)
+            ?: throw DomainException("No se encontró el integrante con ID $memberId")
+
+        val updatedPersonalAccount = member.personalAccount.transferToShared(amount)
+        val updatedSharedAccount = sharedAccount.transferIn(amount)
+        val updatedMember = member.copy(personalAccount = updatedPersonalAccount)
+
+        val movement = Movement(
+            id = movementId,
+            type = MovementType.TRANSFER,
+            amount = amount,
+            description = description,
+            categoryId = categoryId,
+            sourceAccountRef = AccountReference.personal(memberId),
+            destinationAccountRef = AccountReference.SHARED,
+            timestamp = timestamp,
+        )
+
+        val updatedMembers = members.map { if (it.id == memberId) updatedMember else it }
+        return copy(
+            sharedAccount = updatedSharedAccount,
+            members = updatedMembers,
+            movements = movements + movement,
+        )
+    }
+
+    /**
      * Registra un ingreso personal directo de un integrante.
      */
     fun recordPersonalIncome(memberId: String, movement: Movement): Family {
+        validateUniqueMovementId(movement.id)
         require(movement.type == MovementType.INCOME) { "El movimiento debe ser de tipo INCOME." }
         require(movement.destinationAccountRef == AccountReference.personal(memberId)) {
             "El destino debe ser la cuenta personal del integrante $memberId."
@@ -150,6 +192,7 @@ data class Family(
      * Registra un gasto personal de un integrante.
      */
     fun recordPersonalExpense(memberId: String, movement: Movement): Family {
+        validateUniqueMovementId(movement.id)
         require(movement.type == MovementType.EXPENSE) { "El movimiento debe ser de tipo EXPENSE." }
         require(movement.sourceAccountRef == AccountReference.personal(memberId)) {
             "El origen debe ser la cuenta personal del integrante $memberId."
@@ -173,6 +216,9 @@ data class Family(
      */
     fun addSavingsGoal(savingsGoal: SavingsGoal): Family {
         require(savingsGoals.none { it.id == savingsGoal.id }) { "Ya existe una meta de ahorro con ID ${savingsGoal.id}" }
+        require(savingsGoal.currentAmount == Money.ZERO) {
+            "Un nuevo objetivo de ahorro debe iniciarse con saldo reservado cero. Utilice depositToSavingsGoal() para reservar fondos."
+        }
         if (savingsGoal.accountRef.type == AccountType.PERSONAL) {
             val memberId = savingsGoal.accountRef.memberId
             require(members.any { it.id == memberId }) { "No existe el integrante con ID $memberId para esta meta de ahorro personal." }
@@ -189,6 +235,7 @@ data class Family(
         movementId: String,
         timestamp: Long = 0L,
     ): Family {
+        validateUniqueMovementId(movementId)
         val goal = getSavingsGoal(savingsGoalId)
             ?: throw DomainException("No se encontró el objetivo de ahorro con ID $savingsGoalId")
 
@@ -236,6 +283,7 @@ data class Family(
         movementId: String,
         timestamp: Long = 0L,
     ): Family {
+        validateUniqueMovementId(movementId)
         val goal = getSavingsGoal(savingsGoalId)
             ?: throw DomainException("No se encontró el objetivo de ahorro con ID $savingsGoalId")
 
@@ -271,6 +319,12 @@ data class Family(
                 savingsGoals = updatedGoals,
                 movements = movements + movement,
             )
+        }
+    }
+
+    private fun validateUniqueMovementId(movementId: String) {
+        require(movements.none { it.id == movementId }) {
+            "Ya existe un movimiento registrado con el ID '$movementId'."
         }
     }
 }

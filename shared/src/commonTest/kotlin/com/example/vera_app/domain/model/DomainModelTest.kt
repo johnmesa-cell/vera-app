@@ -9,172 +9,132 @@ import kotlin.test.assertTrue
 class DomainModelTest {
 
     @Test
-    fun testMoneyOperations() {
-        val m100 = Money(100L)
-        val m50 = Money(50L)
+    fun testMoneyConversionAndUnits() {
+        val hundredPesos = Money.fromMajorUnits(100L)
+        assertEquals(10_000L, hundredPesos.toCents())
+        assertEquals(100L, hundredPesos.toMajorUnits())
 
-        assertEquals(Money(150L), m100 + m50)
-        assertEquals(Money(50L), m100 - m50)
-        assertTrue(m100 > m50)
+        val fiftyCents = Money.of(50L)
+        assertEquals(50L, fiftyCents.toCents())
+        assertEquals(0L, fiftyCents.toMajorUnits())
+    }
+
+    @Test
+    fun testMoneyArithmeticAndComparisons() {
+        val m1 = Money.fromMajorUnits(100L) // 10.000 centavos
+        val m2 = Money.fromMajorUnits(50L)  // 5.000 centavos
+
+        assertEquals(Money.fromMajorUnits(150L), m1 + m2)
+        assertEquals(Money.fromMajorUnits(50L), m1 - m2)
+        assertTrue(m1 > m2)
 
         assertFailsWith<IllegalArgumentException> {
-            Money(-10L)
+            Money.of(-100L)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            Money.fromMajorUnits(-5L)
         }
     }
 
     @Test
-    fun testSharedAccountIncomeAndExpense() {
-        val family = Family(id = "fam_1", name = "Familia Pérez")
-
-        val incomeMovement = Movement(
-            id = "mov_1",
-            type = MovementType.INCOME,
-            amount = Money(2_000_000L),
-            description = "Sueldo mensual",
-            categoryId = Category.SYSTEM_INCOME.id,
-            destinationAccountRef = AccountReference.SHARED,
-        )
-
-        val familyWithIncome = family.recordSharedIncome(incomeMovement)
-
-        assertEquals(Money(2_000_000L), familyWithIncome.sharedAccount.totalMoney)
-        assertEquals(Money(2_000_000L), familyWithIncome.sharedAccount.availableMoney)
-        assertEquals(Money(2_000_000L), familyWithIncome.totalFamilyMoney)
-
-        val expenseMovement = Movement(
-            id = "mov_2",
-            type = MovementType.EXPENSE,
-            amount = Money(500_000L),
-            description = "Supermercado",
-            categoryId = Category.SYSTEM_EXPENSE.id,
-            sourceAccountRef = AccountReference.SHARED,
-        )
-
-        val familyAfterExpense = familyWithIncome.recordSharedExpense(expenseMovement)
-
-        assertEquals(Money(1_500_000L), familyAfterExpense.sharedAccount.totalMoney)
-        assertEquals(Money(1_500_000L), familyAfterExpense.sharedAccount.availableMoney)
-        assertEquals(Money(1_500_000L), familyAfterExpense.totalFamilyMoney)
+    fun testRejectionOfInvalidAmounts() {
+        assertFailsWith<InvalidAmountException> {
+            Movement(
+                id = "mov_invalid",
+                type = MovementType.INCOME,
+                amount = Money.ZERO,
+                description = "Monto Cero",
+                categoryId = Category.SYSTEM_INCOME.id,
+                destinationAccountRef = AccountReference.SHARED,
+            )
+        }
     }
 
     @Test
-    fun testAllocationToMember() {
+    fun testSharedToPersonalAllocationAndConservationOfTotalMoney() {
         var family = Family(id = "fam_1", name = "Familia Pérez")
-        val member = Member(id = "mem_1", name = "Juan", role = MemberRole.PARENT)
+        val member = Member(id = "mem_1", name = "Carlos", role = MemberRole.PARENT)
         family = family.addMember(member)
 
-        val incomeMovement = Movement(
-            id = "mov_1",
+        // Ingreso familiar: $2.000.000 (en centavos: 200.000.000)
+        val income = Movement(
+            id = "mov_inc_1",
             type = MovementType.INCOME,
-            amount = Money(2_000_000L),
-            description = "Ingreso Familiar",
+            amount = Money.fromMajorUnits(2_000_000L),
+            description = "Sueldo",
             categoryId = Category.SYSTEM_INCOME.id,
             destinationAccountRef = AccountReference.SHARED,
         )
-        family = family.recordSharedIncome(incomeMovement)
+        family = family.recordSharedIncome(income)
 
-        // Asignación de 300.000 a Juan
+        // Asignación a Carlos: $300.000
         family = family.allocateToMember(
             memberId = "mem_1",
-            amount = Money(300_000L),
-            description = "Asignación mensual Juan",
+            amount = Money.fromMajorUnits(300_000L),
+            description = "Mesada Carlos",
             categoryId = Category.SYSTEM_ALLOCATION.id,
             movementId = "mov_alloc_1",
         )
 
-        val updatedMember = family.getMember("mem_1")
-        assertNotNull(updatedMember)
+        val carlos = family.getMember("mem_1")!!
+        assertEquals(Money.fromMajorUnits(1_700_000L), family.sharedAccount.totalMoney)
+        assertEquals(Money.fromMajorUnits(300_000L), carlos.personalAccount.totalMoney)
 
-        // El saldo de la cuenta compartida disminuye en 300.000 (queda 1.700.000)
-        assertEquals(Money(1_700_000L), family.sharedAccount.totalMoney)
-        assertEquals(Money(1_700_000L), family.sharedAccount.availableMoney)
-
-        // El saldo del integrante aumenta en 300.000
-        assertEquals(Money(300_000L), updatedMember.personalAccount.totalMoney)
-        assertEquals(Money(300_000L), updatedMember.personalAccount.availableMoney)
-
-        // El dinero TOTAL de la familia NO cambia (sigue siendo 2.000.000)
-        assertEquals(Money(2_000_000L), family.totalFamilyMoney)
-        assertEquals(Money(2_000_000L), family.totalFamilyAvailableMoney)
-        assertEquals(Money(300_000L), family.totalAllocatedToMembers)
+        // Verificación de conservación de dinero total familiar
+        assertEquals(Money.fromMajorUnits(2_000_000L), family.totalFamilyMoney)
     }
 
     @Test
-    fun testSavingsReservations() {
+    fun testReturnFromMemberToSharedAccount() {
         var family = Family(id = "fam_1", name = "Familia Pérez")
-        val member = Member(id = "mem_1", name = "María", role = MemberRole.PARENT)
+        val member = Member(id = "mem_1", name = "Ana", role = MemberRole.PARENT)
         family = family.addMember(member)
 
-        // Ingreso familiar: 2.000.000
-        val incomeMovement = Movement(
-            id = "mov_1",
+        // Ingreso personal directo a Ana: $500.000
+        val personalIncome = Movement(
+            id = "mov_pinc_1",
             type = MovementType.INCOME,
-            amount = Money(2_000_000L),
-            description = "Ingreso Familiar",
+            amount = Money.fromMajorUnits(500_000L),
+            description = "Trabajo independiente",
             categoryId = Category.SYSTEM_INCOME.id,
-            destinationAccountRef = AccountReference.SHARED,
+            destinationAccountRef = AccountReference.personal("mem_1"),
         )
-        family = family.recordSharedIncome(incomeMovement)
+        family = family.recordPersonalIncome("mem_1", personalIncome)
 
-        // Meta de ahorro familiar: 500.000
-        val sharedGoal = SavingsGoal(
-            id = "goal_fam",
-            name = "Vacaciones Familiares",
-            targetAmount = Money(500_000L),
-            accountRef = AccountReference.SHARED,
+        // Devolución de Ana a la cuenta compartida: $200.000
+        family = family.returnFromMember(
+            memberId = "mem_1",
+            amount = Money.fromMajorUnits(200_000L),
+            description = "Aporte a gastos comunes",
+            categoryId = Category.SYSTEM_ALLOCATION.id,
+            movementId = "mov_ret_1",
         )
-        family = family.addSavingsGoal(sharedGoal)
 
-        // Reserva 300.000 para ahorro familiar
-        family = family.depositToSavingsGoal("goal_fam", Money(300_000L), "mov_sav_1")
+        val ana = family.getMember("mem_1")!!
+        assertEquals(Money.fromMajorUnits(300_000L), ana.personalAccount.totalMoney)
+        assertEquals(Money.fromMajorUnits(200_000L), family.sharedAccount.totalMoney)
 
-        // Verificación de dinero total vs disponible familiar
-        assertEquals(Money(2_000_000L), family.sharedAccount.totalMoney) // No disminuye el total
-        assertEquals(Money(300_000L), family.sharedAccount.reservedSavings)
-        assertEquals(Money(1_700_000L), family.sharedAccount.availableMoney) // Solo disminuye el disponible
-
-        // Asignar 500.000 a María y ella reserva 100.000 para su ahorro personal
-        family = family.allocateToMember("mem_1", Money(500_000L), "Asignación María", Category.SYSTEM_ALLOCATION.id, "mov_alloc_2")
-
-        val personalGoal = SavingsGoal(
-            id = "goal_mem",
-            name = "Curso de Fotografía",
-            targetAmount = Money(200_000L),
-            accountRef = AccountReference.personal("mem_1"),
-        )
-        family = family.addSavingsGoal(personalGoal)
-
-        family = family.depositToSavingsGoal("goal_mem", Money(100_000L), "mov_sav_2")
-
-        val maria = family.getMember("mem_1")!!
-        assertEquals(Money(500_000L), maria.personalAccount.totalMoney)
-        assertEquals(Money(100_000L), maria.personalAccount.reservedSavings)
-        assertEquals(Money(400_000L), maria.personalAccount.availableMoney)
-
-        // Totales consolidados de la familia
-        assertEquals(Money(2_000_000L), family.totalFamilyMoney)
-        assertEquals(Money(400_000L), family.totalFamilyReservedSavings) // 300.000 + 100.000
-        assertEquals(Money(1_600_000L), family.totalFamilyAvailableMoney) // 1.200.000 (compartido disponible) + 400.000 (personal disponible)
+        // Conservación del dinero total familiar
+        assertEquals(Money.fromMajorUnits(500_000L), family.totalFamilyMoney)
     }
 
     @Test
-    fun testValidationExceedAvailableBalance() {
+    fun testRejectionOfExpensesExceedingAvailableBalance() {
         var family = Family(id = "fam_1", name = "Familia Pérez")
-        val incomeMovement = Movement(
-            id = "mov_1",
+        val income = Movement(
+            id = "mov_inc_1",
             type = MovementType.INCOME,
-            amount = Money(100_000L),
+            amount = Money.fromMajorUnits(100_000L),
             description = "Ingreso",
             categoryId = Category.SYSTEM_INCOME.id,
             destinationAccountRef = AccountReference.SHARED,
         )
-        family = family.recordSharedIncome(incomeMovement)
+        family = family.recordSharedIncome(income)
 
-        // Intentar gastar más de lo disponible debe fallar
         val excessiveExpense = Movement(
-            id = "mov_2",
+            id = "mov_exp_1",
             type = MovementType.EXPENSE,
-            amount = Money(150_000L),
+            amount = Money.fromMajorUnits(150_000L),
             description = "Gasto Excesivo",
             categoryId = Category.SYSTEM_EXPENSE.id,
             sourceAccountRef = AccountReference.SHARED,
@@ -186,16 +146,139 @@ class DomainModelTest {
     }
 
     @Test
-    fun testValidationInvalidAmount() {
-        assertFailsWith<InvalidAmountException> {
-            Movement(
-                id = "mov_inv",
-                type = MovementType.INCOME,
-                amount = Money(0L),
-                description = "Inválido",
-                categoryId = Category.SYSTEM_INCOME.id,
-                destinationAccountRef = AccountReference.SHARED,
+    fun testRejectionOfTransferUsingReservedSavings() {
+        var family = Family(id = "fam_1", name = "Familia Pérez")
+        val member = Member(id = "mem_1", name = "Pedro", role = MemberRole.PARENT)
+        family = family.addMember(member)
+
+        // Ingreso a Pedro: $500.000
+        val income = Movement(
+            id = "mov_inc_p",
+            type = MovementType.INCOME,
+            amount = Money.fromMajorUnits(500_000L),
+            description = "Sueldo Pedro",
+            categoryId = Category.SYSTEM_INCOME.id,
+            destinationAccountRef = AccountReference.personal("mem_1"),
+        )
+        family = family.recordPersonalIncome("mem_1", income)
+
+        // Reserva $400.000 para ahorro personal de Pedro (Disponible: $100.000)
+        val goal = SavingsGoal(
+            id = "goal_pedro",
+            name = "Auto",
+            targetAmount = Money.fromMajorUnits(1_000_000L),
+            accountRef = AccountReference.personal("mem_1"),
+        )
+        family = family.addSavingsGoal(goal)
+        family = family.depositToSavingsGoal("goal_pedro", Money.fromMajorUnits(400_000L), "mov_sav_1")
+
+        // Intentar devolver $200.000 a la cuenta compartida debe fallar porque solo hay $100.000 disponibles
+        assertFailsWith<InsufficientBalanceException> {
+            family.returnFromMember(
+                memberId = "mem_1",
+                amount = Money.fromMajorUnits(200_000L),
+                description = "Devolución excesiva",
+                categoryId = Category.SYSTEM_ALLOCATION.id,
+                movementId = "mov_ret_fail",
             )
         }
+    }
+
+    @Test
+    fun testPreventionOfDuplicateMovements() {
+        var family = Family(id = "fam_1", name = "Familia Pérez")
+        val income = Movement(
+            id = "mov_unique_1",
+            type = MovementType.INCOME,
+            amount = Money.fromMajorUnits(100_000L),
+            description = "Ingreso Único",
+            categoryId = Category.SYSTEM_INCOME.id,
+            destinationAccountRef = AccountReference.SHARED,
+        )
+        family = family.recordSharedIncome(income)
+
+        // Registrar un segundo movimiento con el mismo ID debe fallar
+        val duplicateIncome = Movement(
+            id = "mov_unique_1",
+            type = MovementType.INCOME,
+            amount = Money.fromMajorUnits(50_000L),
+            description = "Ingreso Duplicado",
+            categoryId = Category.SYSTEM_INCOME.id,
+            destinationAccountRef = AccountReference.SHARED,
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            family.recordSharedIncome(duplicateIncome)
+        }
+    }
+
+    @Test
+    fun testSavingsGoalValidationsAndIntegrity() {
+        // Meta con objetivo cero debe fallar
+        assertFailsWith<IllegalArgumentException> {
+            SavingsGoal(
+                id = "goal_zero",
+                name = "Inválida",
+                targetAmount = Money.ZERO,
+                accountRef = AccountReference.SHARED,
+            )
+        }
+
+        // Meta con saldo inicial mayor a cero debe rechazarse al agregarla a la familia
+        var family = Family(id = "fam_1", name = "Familia Pérez")
+        val invalidInitialGoal = SavingsGoal(
+            id = "goal_init",
+            name = "Con Saldo Inicial Sin Reservar",
+            targetAmount = Money.fromMajorUnits(500_000L),
+            currentAmount = Money.fromMajorUnits(100_000L),
+            accountRef = AccountReference.SHARED,
+        )
+        assertFailsWith<IllegalArgumentException> {
+            family.addSavingsGoal(invalidInitialGoal)
+        }
+    }
+
+    @Test
+    fun testSavingsDepositsWithdrawalsAndIntegrityWithAccounts() {
+        var family = Family(id = "fam_1", name = "Familia Pérez")
+        val member = Member(id = "mem_1", name = "Lucía", role = MemberRole.PARENT)
+        family = family.addMember(member)
+
+        val sharedIncome = Movement(
+            id = "mov_inc_sh",
+            type = MovementType.INCOME,
+            amount = Money.fromMajorUnits(1_000_000L),
+            description = "Ingreso Compartido",
+            categoryId = Category.SYSTEM_INCOME.id,
+            destinationAccountRef = AccountReference.SHARED,
+        )
+        family = family.recordSharedIncome(sharedIncome)
+
+        val goalShared = SavingsGoal(
+            id = "goal_sh",
+            name = "Fondo de Emergencia",
+            targetAmount = Money.fromMajorUnits(800_000L),
+            accountRef = AccountReference.SHARED,
+        )
+        family = family.addSavingsGoal(goalShared)
+
+        // Depositar $300.000 en la meta de ahorro compartida
+        family = family.depositToSavingsGoal("goal_sh", Money.fromMajorUnits(300_000L), "mov_dep_1")
+
+        // Coherencia: la suma de metas del objetivo coincide exactamente con `reservedSavings` de la cuenta
+        val currentGoal = family.getSavingsGoal("goal_sh")!!
+        assertEquals(Money.fromMajorUnits(300_000L), currentGoal.currentAmount)
+        assertEquals(Money.fromMajorUnits(300_000L), family.sharedAccount.reservedSavings)
+        assertEquals(Money.fromMajorUnits(700_000L), family.sharedAccount.availableMoney)
+        assertEquals(Money.fromMajorUnits(1_000_000L), family.sharedAccount.totalMoney) // Total intacto
+
+        // Retirar $100.000 de la meta
+        family = family.withdrawFromSavingsGoal("goal_sh", Money.fromMajorUnits(100_000L), "mov_with_1")
+
+        val updatedGoal = family.getSavingsGoal("goal_sh")!!
+        assertEquals(Money.fromMajorUnits(200_000L), updatedGoal.currentAmount)
+        assertEquals(Money.fromMajorUnits(200_000L), family.sharedAccount.reservedSavings)
+        assertEquals(Money.fromMajorUnits(800_000L), family.sharedAccount.availableMoney)
+        assertEquals(Money.fromMajorUnits(1_000_000L), family.sharedAccount.totalMoney)
     }
 }

@@ -1,7 +1,7 @@
 package com.example.vera_app.domain.model
 
 /**
- * Representa un movimiento financiero en Vera.
+ * Representa un movimiento financiero inmutable en Vera.
  */
 data class Movement(
     val id: String,
@@ -16,6 +16,9 @@ data class Movement(
 ) {
     init {
         require(id.isNotBlank()) { "El ID del movimiento no puede estar vacío." }
+        require(description.isNotBlank()) { "La descripción del movimiento no puede estar vacía." }
+        require(categoryId.isNotBlank()) { "El ID de categoría del movimiento no puede estar vacío." }
+
         if (!amount.isPositive()) {
             throw InvalidAmountException(amount, "El importe del movimiento debe ser estrictamente mayor a cero.")
         }
@@ -23,9 +26,13 @@ data class Movement(
         when (type) {
             MovementType.INCOME -> {
                 require(destinationAccountRef != null) { "Un movimiento de ingreso debe especificar la cuenta de destino." }
+                require(sourceAccountRef == null) { "Un movimiento de ingreso no debe especificar cuenta de origen." }
+                require(savingsGoalId == null) { "Un movimiento de ingreso no debe asociarse a una meta de ahorro." }
             }
             MovementType.EXPENSE -> {
                 require(sourceAccountRef != null) { "Un movimiento de gasto debe especificar la cuenta de origen." }
+                require(destinationAccountRef == null) { "Un movimiento de gasto no debe especificar cuenta de destino." }
+                require(savingsGoalId == null) { "Un movimiento de gasto no debe asociarse a una meta de ahorro." }
             }
             MovementType.TRANSFER -> {
                 require((sourceAccountRef != null) && (destinationAccountRef != null)) {
@@ -34,14 +41,21 @@ data class Movement(
                 require(sourceAccountRef != destinationAccountRef) {
                     "La cuenta de origen y destino en una transferencia deben ser diferentes."
                 }
+                require(savingsGoalId == null) { "Una transferencia no debe asociarse a una meta de ahorro." }
             }
-            MovementType.SAVINGS_DEPOSIT, MovementType.SAVINGS_WITHDRAWAL -> {
+            MovementType.SAVINGS_DEPOSIT -> {
                 require(!savingsGoalId.isNullOrBlank()) {
-                    "Un movimiento de ahorro debe estar vinculado a un ID de objetivo de ahorro."
+                    "Un depósito de ahorro debe estar vinculado a un ID de objetivo de ahorro."
                 }
-                require((sourceAccountRef != null) || (destinationAccountRef != null)) {
-                    "Un movimiento de ahorro debe especificar la cuenta asociada."
+                require(sourceAccountRef != null) { "Un depósito de ahorro debe especificar la cuenta de origen." }
+                require(destinationAccountRef == null) { "Un depósito de ahorro no debe especificar cuenta de destino." }
+            }
+            MovementType.SAVINGS_WITHDRAWAL -> {
+                require(!savingsGoalId.isNullOrBlank()) {
+                    "Un retiro de ahorro debe estar vinculado a un ID de objetivo de ahorro."
                 }
+                require(destinationAccountRef != null) { "Un retiro de ahorro debe especificar la cuenta de destino." }
+                require(sourceAccountRef == null) { "Un retiro de ahorro no debe especificar cuenta de origen." }
             }
         }
     }
