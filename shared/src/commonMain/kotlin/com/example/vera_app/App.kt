@@ -18,11 +18,12 @@ import org.jetbrains.compose.resources.painterResource
 
 import veraapp.shared.generated.resources.Res
 import veraapp.shared.generated.resources.compose_multiplatform
+import com.example.vera_app.ui.theme.VeraTheme
 
 @Composable
 @Preview
 fun App() {
-    MaterialTheme {
+    VeraTheme {
         var showContent by remember { mutableStateOf(false) }
         Column(
             modifier = Modifier
