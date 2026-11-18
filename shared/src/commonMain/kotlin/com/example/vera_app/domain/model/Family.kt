@@ -15,6 +15,55 @@ data class Family(
     init {
         require(id.isNotBlank()) { "El ID de la familia no puede estar vacío." }
         require(name.isNotBlank()) { "El nombre de la familia no puede estar vacío." }
+
+        // 1. No existen integrantes con IDs duplicados
+        require(members.map { it.id }.distinct().size == members.size) {
+            "Existen integrantes con IDs duplicados en la familia."
+        }
+
+        // 2. No existen metas de ahorro con IDs duplicados
+        require(savingsGoals.map { it.id }.distinct().size == savingsGoals.size) {
+            "Existen metas de ahorro con IDs duplicados en la familia."
+        }
+
+        // 3. No existen movimientos con IDs duplicados
+        require(movements.map { it.id }.distinct().size == movements.size) {
+            "Existen movimientos con IDs duplicados en la familia."
+        }
+
+        // 4 & 5. Las referencias de las metas corresponden a cuentas válidas dentro de la familia
+        savingsGoals.forEach { goal ->
+            if (goal.accountRef.type == AccountType.PERSONAL) {
+                val memberId = goal.accountRef.memberId
+                require(!memberId.isNullOrBlank() && members.any { it.id == memberId }) {
+                    "La meta de ahorro '${goal.name}' está vinculada a un integrante inexistente o inválido (ID: $memberId)."
+                }
+            } else {
+                require(goal.accountRef.memberId == null) {
+                    "La meta de ahorro familiar '${goal.name}' no debe tener un memberId asociado."
+                }
+            }
+        }
+
+        // 6. La suma de las reservas de las metas de la cuenta compartida coincide con sharedAccount.reservedSavings
+        val sharedGoalsReserved = savingsGoals
+            .filter { it.accountRef == AccountReference.SHARED }
+            .fold(Money.ZERO) { acc, goal -> acc + goal.currentAmount }
+
+        require(sharedAccount.reservedSavings == sharedGoalsReserved) {
+            "El saldo reservado de la cuenta compartida (${sharedAccount.reservedSavings}) no coincide con la suma de sus metas de ahorro ($sharedGoalsReserved)."
+        }
+
+        // 6. La suma de las reservas de las metas de cada cuenta personal coincide con personalAccount.reservedSavings
+        members.forEach { member ->
+            val memberGoalsReserved = savingsGoals
+                .filter { it.accountRef == AccountReference.personal(member.id) }
+                .fold(Money.ZERO) { acc, goal -> acc + goal.currentAmount }
+
+            require(member.personalAccount.reservedSavings == memberGoalsReserved) {
+                "El saldo reservado de la cuenta personal del integrante ${member.name} (${member.personalAccount.reservedSavings}) no coincide con la suma de sus metas de ahorro ($memberGoalsReserved)."
+            }
+        }
     }
 
     // --- Métricas consolidadas ---
