@@ -19,7 +19,7 @@ class InsufficientBalanceException(
  */
 class InvalidAmountException(
     val amount: Money,
-    message: String = "El monto debe ser strictly mayor a cero. Valor ingresado: $amount",
+    message: String = "El monto debe ser estrictamente mayor a cero. Valor ingresado: $amount",
 ) : DomainException(message)
 
 /**

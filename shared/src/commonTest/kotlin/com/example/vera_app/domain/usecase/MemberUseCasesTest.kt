@@ -6,7 +6,7 @@ import com.example.vera_app.domain.model.MemberRole
 import com.example.vera_app.domain.usecase.family.CreateFamilyUseCase
 import com.example.vera_app.domain.usecase.member.AddMemberUseCase
 import com.example.vera_app.repository.FakeFamilyRepository
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,73 +27,65 @@ class MemberUseCasesTest {
     }
 
     @Test
-    fun testAddMemberSuccessfully() {
-        runBlocking {
-            createFamilyUseCase("fam_1", "Familia Pérez")
+    fun testAddMemberSuccessfully() = runTest {
+        createFamilyUseCase("fam_1", "Familia Pérez")
 
-            val newMember = Member(id = "mem_1", name = "Carlos", role = MemberRole.PARENT)
-            val updatedFamily = addMemberUseCase("fam_1", newMember)
+        val newMember = Member(id = "mem_1", name = "Carlos", role = MemberRole.PARENT)
+        val updatedFamily = addMemberUseCase("fam_1", newMember)
 
-            assertEquals(1, updatedFamily.members.size)
-            assertEquals("Carlos", updatedFamily.members.first().name)
-            assertEquals(1, repository.saveFamilyCallCount)
+        assertEquals(1, updatedFamily.members.size)
+        assertEquals("Carlos", updatedFamily.members.first().name)
+        assertEquals(1, repository.saveFamilyCallCount)
 
-            val savedFamily = repository.getFamilyById("fam_1")
-            assertNotNull(savedFamily)
-            assertEquals(1, savedFamily.members.size)
-            assertEquals("Carlos", savedFamily.getMember("mem_1")?.name)
-        }
+        val savedFamily = repository.getFamilyById("fam_1")
+        assertNotNull(savedFamily)
+        assertEquals(1, savedFamily.members.size)
+        assertEquals("Carlos", savedFamily.getMember("mem_1")?.name)
     }
 
     @Test
-    fun testAddMemberRejectsDuplicateMemberId() {
-        runBlocking {
-            createFamilyUseCase("fam_1", "Familia Pérez")
+    fun testAddMemberRejectsDuplicateMemberId() = runTest {
+        createFamilyUseCase("fam_1", "Familia Pérez")
 
-            val member1 = Member(id = "mem_1", name = "Carlos", role = MemberRole.PARENT)
-            addMemberUseCase("fam_1", member1)
+        val member1 = Member(id = "mem_1", name = "Carlos", role = MemberRole.PARENT)
+        addMemberUseCase("fam_1", member1)
 
-            val duplicateMember = Member(id = "mem_1", name = "Carlos Duplicado", role = MemberRole.CHILD)
-            assertFailsWith<IllegalArgumentException> {
-                addMemberUseCase("fam_1", duplicateMember)
-            }
-
-            assertEquals(1, repository.saveFamilyCallCount)
-
-            val savedFamily = repository.getFamilyById("fam_1")
-            assertNotNull(savedFamily)
-            assertEquals(1, savedFamily.members.size)
-            assertEquals("Carlos", savedFamily.members.first().name)
+        val duplicateMember = Member(id = "mem_1", name = "Carlos Duplicado", role = MemberRole.CHILD)
+        assertFailsWith<IllegalArgumentException> {
+            addMemberUseCase("fam_1", duplicateMember)
         }
+
+        assertEquals(1, repository.saveFamilyCallCount)
+
+        val savedFamily = repository.getFamilyById("fam_1")
+        assertNotNull(savedFamily)
+        assertEquals(1, savedFamily.members.size)
+        assertEquals("Carlos", savedFamily.members.first().name)
     }
 
     @Test
-    fun testAddMemberThrowsWhenFamilyNotFound() {
-        runBlocking {
-            val member = Member(id = "mem_1", name = "Carlos")
+    fun testAddMemberThrowsWhenFamilyNotFound() = runTest {
+        val member = Member(id = "mem_1", name = "Carlos")
 
-            assertFailsWith<FamilyNotFoundException> {
-                addMemberUseCase("fam_ghost", member)
-            }
-
-            assertEquals(0, repository.saveFamilyCallCount)
+        assertFailsWith<FamilyNotFoundException> {
+            addMemberUseCase("fam_ghost", member)
         }
+
+        assertEquals(0, repository.saveFamilyCallCount)
     }
 
     @Test
-    fun testAddMemberRejectsBlankMemberData() {
-        runBlocking {
-            createFamilyUseCase("fam_1", "Familia Pérez")
+    fun testAddMemberRejectsBlankMemberData() = runTest {
+        createFamilyUseCase("fam_1", "Familia Pérez")
 
-            assertFailsWith<IllegalArgumentException> {
-                Member(id = "", name = "Carlos")
-            }
-
-            assertFailsWith<IllegalArgumentException> {
-                Member(id = "mem_1", name = "  ")
-            }
-
-            assertEquals(0, repository.saveFamilyCallCount)
+        assertFailsWith<IllegalArgumentException> {
+            Member(id = "", name = "Carlos")
         }
+
+        assertFailsWith<IllegalArgumentException> {
+            Member(id = "mem_1", name = "  ")
+        }
+
+        assertEquals(0, repository.saveFamilyCallCount)
     }
 }

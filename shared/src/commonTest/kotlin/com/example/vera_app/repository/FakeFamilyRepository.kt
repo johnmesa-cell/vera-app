@@ -1,6 +1,7 @@
 package com.example.vera_app.repository
 
 import com.example.vera_app.domain.model.Family
+import com.example.vera_app.domain.model.FamilyAlreadyExistsException
 import com.example.vera_app.domain.repository.FamilyRepository
 
 class FakeFamilyRepository : FamilyRepository {
@@ -17,6 +18,9 @@ class FakeFamilyRepository : FamilyRepository {
     }
 
     override suspend fun createFamily(family: Family) {
+        if (families.containsKey(family.id)) {
+            throw FamilyAlreadyExistsException(family.id)
+        }
         createFamilyCallCount++
         families[family.id] = family
     }

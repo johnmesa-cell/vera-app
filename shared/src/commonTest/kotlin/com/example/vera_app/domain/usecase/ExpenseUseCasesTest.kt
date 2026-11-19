@@ -14,7 +14,7 @@ import com.example.vera_app.domain.usecase.member.AddMemberUseCase
 import com.example.vera_app.domain.usecase.savings.CreateSavingsGoalUseCase
 import com.example.vera_app.domain.usecase.savings.DepositToSavingsGoalUseCase
 import com.example.vera_app.repository.FakeFamilyRepository
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -46,103 +46,93 @@ class ExpenseUseCasesTest {
     }
 
     @Test
-    fun testRecordSharedExpenseSuccessfully() {
-        runBlocking {
-            createFamilyUseCase("fam_1", "Familia Pérez")
-            recordSharedIncomeUseCase("fam_1", Money.fromMajorUnits(1_000_000L), "Ingreso", movementId = "mov_inc")
+    fun testRecordSharedExpenseSuccessfully() = runTest {
+        createFamilyUseCase("fam_1", "Familia Pérez")
+        recordSharedIncomeUseCase("fam_1", Money.fromMajorUnits(1_000_000L), "Ingreso", movementId = "mov_inc")
 
-            val updatedFamily = recordSharedExpenseUseCase(
+        val updatedFamily = recordSharedExpenseUseCase(
+            familyId = "fam_1",
+            amount = Money.fromMajorUnits(300_000L),
+            description = "Mercado",
+            movementId = "mov_exp_1",
+        )
+
+        assertEquals(Money.fromMajorUnits(700_000L), updatedFamily.sharedAccount.totalMoney)
+        assertEquals(Money.fromMajorUnits(700_000L), updatedFamily.sharedAccount.availableMoney)
+    }
+
+    @Test
+    fun testRecordPersonalExpenseSuccessfully() = runTest {
+        createFamilyUseCase("fam_1", "Familia Pérez")
+        addMemberUseCase("fam_1", Member("mem_1", "Carlos"))
+        recordPersonalIncomeUseCase("fam_1", "mem_1", Money.fromMajorUnits(500_000L), "Ingreso Carlos", movementId = "mov_pinc")
+
+        val updatedFamily = recordPersonalExpenseUseCase(
+            familyId = "fam_1",
+            memberId = "mem_1",
+            amount = Money.fromMajorUnits(100_000L),
+            description = "Libro",
+            movementId = "mov_pexp_1",
+        )
+
+        val carlos = updatedFamily.getMember("mem_1")!!
+        assertEquals(Money.fromMajorUnits(400_000L), carlos.personalAccount.totalMoney)
+        assertEquals(Money.fromMajorUnits(400_000L), carlos.personalAccount.availableMoney)
+    }
+
+    @Test
+    fun testRejectsExpenseExceedingTotalBalance() = runTest {
+        createFamilyUseCase("fam_1", "Familia Pérez")
+        recordSharedIncomeUseCase("fam_1", Money.fromMajorUnits(100_000L), "Ingreso", movementId = "mov_inc")
+
+        val initialSaveCount = repository.saveFamilyCallCount
+
+        assertFailsWith<InsufficientBalanceException> {
+            recordSharedExpenseUseCase(
+                familyId = "fam_1",
+                amount = Money.fromMajorUnits(200_000L),
+                description = "Gasto Excesivo",
+                movementId = "mov_exp_fail",
+            )
+        }
+
+        assertEquals(initialSaveCount, repository.saveFamilyCallCount)
+        assertEquals(Money.fromMajorUnits(100_000L), repository.getFamilyById("fam_1")?.sharedAccount?.totalMoney)
+    }
+
+    @Test
+    fun testRejectsExpenseUsingReservedSavings() = runTest {
+        createFamilyUseCase("fam_1", "Familia Pérez")
+        recordSharedIncomeUseCase("fam_1", Money.fromMajorUnits(1_000_000L), "Ingreso", movementId = "mov_inc")
+        createSavingsGoalUseCase("fam_1", "goal_1", "Viaje", Money.fromMajorUnits(1_000_000L), AccountReference.SHARED)
+        depositToSavingsGoalUseCase("fam_1", "goal_1", Money.fromMajorUnits(800_000L), movementId = "mov_dep")
+
+        val familyState = repository.getFamilyById("fam_1")!!
+        assertEquals(Money.fromMajorUnits(200_000L), familyState.sharedAccount.availableMoney)
+
+        val initialSaveCount = repository.saveFamilyCallCount
+
+        assertFailsWith<InsufficientBalanceException> {
+            recordSharedExpenseUseCase(
                 familyId = "fam_1",
                 amount = Money.fromMajorUnits(300_000L),
-                description = "Mercado",
-                movementId = "mov_exp_1",
+                description = "Gasto que toca ahorros",
+                movementId = "mov_exp_reserved",
             )
-
-            assertEquals(Money.fromMajorUnits(700_000L), updatedFamily.sharedAccount.totalMoney)
-            assertEquals(Money.fromMajorUnits(700_000L), updatedFamily.sharedAccount.availableMoney)
         }
+
+        assertEquals(initialSaveCount, repository.saveFamilyCallCount)
     }
 
     @Test
-    fun testRecordPersonalExpenseSuccessfully() {
-        runBlocking {
-            createFamilyUseCase("fam_1", "Familia Pérez")
-            addMemberUseCase("fam_1", Member("mem_1", "Carlos"))
-            recordPersonalIncomeUseCase("fam_1", "mem_1", Money.fromMajorUnits(500_000L), "Ingreso Carlos", movementId = "mov_pinc")
-
-            val updatedFamily = recordPersonalExpenseUseCase(
-                familyId = "fam_1",
-                memberId = "mem_1",
+    fun testRecordExpenseThrowsWhenFamilyNotFound() = runTest {
+        assertFailsWith<FamilyNotFoundException> {
+            recordSharedExpenseUseCase(
+                familyId = "fam_ghost",
                 amount = Money.fromMajorUnits(100_000L),
-                description = "Libro",
-                movementId = "mov_pexp_1",
+                description = "Gasto sin familia",
+                movementId = "mov_fail",
             )
-
-            val carlos = updatedFamily.getMember("mem_1")!!
-            assertEquals(Money.fromMajorUnits(400_000L), carlos.personalAccount.totalMoney)
-            assertEquals(Money.fromMajorUnits(400_000L), carlos.personalAccount.availableMoney)
-        }
-    }
-
-    @Test
-    fun testRejectsExpenseExceedingTotalBalance() {
-        runBlocking {
-            createFamilyUseCase("fam_1", "Familia Pérez")
-            recordSharedIncomeUseCase("fam_1", Money.fromMajorUnits(100_000L), "Ingreso", movementId = "mov_inc")
-
-            val initialSaveCount = repository.saveFamilyCallCount
-
-            assertFailsWith<InsufficientBalanceException> {
-                recordSharedExpenseUseCase(
-                    familyId = "fam_1",
-                    amount = Money.fromMajorUnits(200_000L),
-                    description = "Gasto Excesivo",
-                    movementId = "mov_exp_fail",
-                )
-            }
-
-            assertEquals(initialSaveCount, repository.saveFamilyCallCount)
-            assertEquals(Money.fromMajorUnits(100_000L), repository.getFamilyById("fam_1")?.sharedAccount?.totalMoney)
-        }
-    }
-
-    @Test
-    fun testRejectsExpenseUsingReservedSavings() {
-        runBlocking {
-            createFamilyUseCase("fam_1", "Familia Pérez")
-            recordSharedIncomeUseCase("fam_1", Money.fromMajorUnits(1_000_000L), "Ingreso", movementId = "mov_inc")
-            createSavingsGoalUseCase("fam_1", "goal_1", "Viaje", Money.fromMajorUnits(1_000_000L), AccountReference.SHARED)
-            depositToSavingsGoalUseCase("fam_1", "goal_1", Money.fromMajorUnits(800_000L), movementId = "mov_dep")
-
-            val familyState = repository.getFamilyById("fam_1")!!
-            assertEquals(Money.fromMajorUnits(200_000L), familyState.sharedAccount.availableMoney)
-
-            val initialSaveCount = repository.saveFamilyCallCount
-
-            assertFailsWith<InsufficientBalanceException> {
-                recordSharedExpenseUseCase(
-                    familyId = "fam_1",
-                    amount = Money.fromMajorUnits(300_000L),
-                    description = "Gasto que toca ahorros",
-                    movementId = "mov_exp_reserved",
-                )
-            }
-
-            assertEquals(initialSaveCount, repository.saveFamilyCallCount)
-        }
-    }
-
-    @Test
-    fun testRecordExpenseThrowsWhenFamilyNotFound() {
-        runBlocking {
-            assertFailsWith<FamilyNotFoundException> {
-                recordSharedExpenseUseCase(
-                    familyId = "fam_ghost",
-                    amount = Money.fromMajorUnits(100_000L),
-                    description = "Gasto sin familia",
-                    movementId = "mov_fail",
-                )
-            }
         }
     }
 }
