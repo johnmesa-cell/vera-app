@@ -35,7 +35,7 @@ data class Family(
         savingsGoals.forEach { goal ->
             if (goal.accountRef.type == AccountType.PERSONAL) {
                 val memberId = goal.accountRef.memberId
-                require(!memberId.isNullOrBlank() && members.any { it.id == memberId }) {
+                require((!memberId.isNullOrBlank()) && members.any { it.id == memberId }) {
                     "La meta de ahorro '${goal.name}' está vinculada a un integrante inexistente o inválido (ID: $memberId)."
                 }
             } else {
@@ -62,6 +62,51 @@ data class Family(
 
             require(member.personalAccount.reservedSavings == memberGoalsReserved) {
                 "El saldo reservado de la cuenta personal del integrante ${member.name} (${member.personalAccount.reservedSavings}) no coincide con la suma de sus metas de ahorro ($memberGoalsReserved)."
+            }
+        }
+
+        // 7. Validaciones de integridad para las referencias de los movimientos
+        movements.forEach { movement ->
+            movement.sourceAccountRef?.let { ref ->
+                if (ref.type == AccountType.PERSONAL) {
+                    val memberId = ref.memberId
+                    require((!memberId.isNullOrBlank()) && members.any { it.id == memberId }) {
+                        "El movimiento '${movement.id}' referencia una cuenta personal de origen con un integrante inexistente (ID: $memberId)."
+                    }
+                }
+            }
+
+            movement.destinationAccountRef?.let { ref ->
+                if (ref.type == AccountType.PERSONAL) {
+                    val memberId = ref.memberId
+                    require((!memberId.isNullOrBlank()) && members.any { it.id == memberId }) {
+                        "El movimiento '${movement.id}' referencia una cuenta personal de destino con un integrante inexistente (ID: $memberId)."
+                    }
+                }
+            }
+
+            when (movement.type) {
+                MovementType.SAVINGS_DEPOSIT -> {
+                    val goalId = movement.savingsGoalId
+                    val goal = savingsGoals.find { it.id == goalId }
+                    require(goal != null) {
+                        "El depósito de ahorro '${movement.id}' referencia un objetivo de ahorro inexistente (ID: $goalId)."
+                    }
+                    require(movement.sourceAccountRef == goal.accountRef) {
+                        "La cuenta de origen del depósito de ahorro ('${movement.sourceAccountRef}') no coincide con la cuenta asociada al objetivo ('${goal.accountRef}')."
+                    }
+                }
+                MovementType.SAVINGS_WITHDRAWAL -> {
+                    val goalId = movement.savingsGoalId
+                    val goal = savingsGoals.find { it.id == goalId }
+                    require(goal != null) {
+                        "El retiro de ahorro '${movement.id}' referencia un objetivo de ahorro inexistente (ID: $goalId)."
+                    }
+                    require(movement.destinationAccountRef == goal.accountRef) {
+                        "La cuenta de destino del retiro de ahorro ('${movement.destinationAccountRef}') no coincide con la cuenta asociada al objetivo ('${goal.accountRef}')."
+                    }
+                }
+                else -> { /* Validaciones de estructura general se realizan en Movement.kt */ }
             }
         }
     }

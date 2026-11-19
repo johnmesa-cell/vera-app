@@ -28,17 +28,14 @@ class DomainModelTest {
 
     @Test
     fun testMoneyOverflowAndNegativeRejection() {
-        // Suma que produce desbordamiento
         assertFailsWith<ArithmeticException> {
             Money(Long.MAX_VALUE) + Money(1L)
         }
 
-        // Conversión desde unidades principales que produce desbordamiento
         assertFailsWith<ArithmeticException> {
             Money.fromMajorUnits(Long.MAX_VALUE)
         }
 
-        // Rechazo de importes negativos
         assertFailsWith<IllegalArgumentException> {
             Money.of(-100L)
         }
@@ -119,7 +116,7 @@ class DomainModelTest {
         }
     }
 
-    // --- 3. Pruebas de referencias incorrectas ---
+    // --- 3. Pruebas de referencias incorrectas en metas ---
 
     @Test
     fun testRejectionOfSavingsGoalLinkedToNonExistentMember() {
@@ -143,7 +140,6 @@ class DomainModelTest {
 
     @Test
     fun testRejectionOfInconsistentSharedAccountReservations() {
-        // La cuenta compartida declara 500 centavos de reserva pero no tiene metas
         assertFailsWith<IllegalArgumentException> {
             Family(
                 id = "fam_1",
@@ -161,7 +157,6 @@ class DomainModelTest {
             name = "Ana",
             personalAccount = PersonalAccount(memberId = "mem_1", totalMoney = Money(1000L), reservedSavings = Money(300L)),
         )
-        // Integrante declara 300 de reserva pero no tiene metas asociadas
         assertFailsWith<IllegalArgumentException> {
             Family(
                 id = "fam_1",
@@ -209,7 +204,212 @@ class DomainModelTest {
         assertEquals(Money(300L), family.totalFamilyReservedSavings)
     }
 
-    // --- 5. Transferencias, devoluciones y gastos ---
+    // --- 5. Pruebas de integridad de movimientos y referencias ---
+
+    @Test
+    fun testRejectionOfIncomeReferencingNonExistentMemberAccount() {
+        val invalidIncome = Movement(
+            id = "mov_inc_bad",
+            type = MovementType.INCOME,
+            amount = Money(1000L),
+            description = "Ingreso Invalido",
+            categoryId = Category.SYSTEM_INCOME.id,
+            destinationAccountRef = AccountReference.personal("ghost_member"),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            Family(
+                id = "fam_1",
+                name = "Familia Pérez",
+                movements = listOf(invalidIncome),
+            )
+        }
+    }
+
+    @Test
+    fun testRejectionOfExpenseReferencingNonExistentMemberAccount() {
+        val invalidExpense = Movement(
+            id = "mov_exp_bad",
+            type = MovementType.EXPENSE,
+            amount = Money(500L),
+            description = "Gasto Invalido",
+            categoryId = Category.SYSTEM_EXPENSE.id,
+            sourceAccountRef = AccountReference.personal("ghost_member"),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            Family(
+                id = "fam_1",
+                name = "Familia Pérez",
+                movements = listOf(invalidExpense),
+            )
+        }
+    }
+
+    @Test
+    fun testRejectionOfTransferReferencingNonExistentMemberAccount() {
+        val invalidTransfer = Movement(
+            id = "mov_tr_bad",
+            type = MovementType.TRANSFER,
+            amount = Money(500L),
+            description = "Transferencia Invalida",
+            categoryId = Category.SYSTEM_ALLOCATION.id,
+            sourceAccountRef = AccountReference.SHARED,
+            destinationAccountRef = AccountReference.personal("ghost_member"),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            Family(
+                id = "fam_1",
+                name = "Familia Pérez",
+                movements = listOf(invalidTransfer),
+            )
+        }
+    }
+
+    @Test
+    fun testRejectionOfSavingsDepositWithNonExistentGoalId() {
+        val invalidDeposit = Movement(
+            id = "mov_dep_bad",
+            type = MovementType.SAVINGS_DEPOSIT,
+            amount = Money(200L),
+            description = "Reserva Ahorro Invalida",
+            categoryId = Category.SYSTEM_SAVINGS.id,
+            sourceAccountRef = AccountReference.SHARED,
+            savingsGoalId = "non_existent_goal",
+        )
+        assertFailsWith<IllegalArgumentException> {
+            Family(
+                id = "fam_1",
+                name = "Familia Pérez",
+                movements = listOf(invalidDeposit),
+            )
+        }
+    }
+
+    @Test
+    fun testRejectionOfSavingsWithdrawalWithNonExistentGoalId() {
+        val invalidWithdrawal = Movement(
+            id = "mov_with_bad",
+            type = MovementType.SAVINGS_WITHDRAWAL,
+            amount = Money(200L),
+            description = "Retiro Ahorro Invalido",
+            categoryId = Category.SYSTEM_SAVINGS.id,
+            destinationAccountRef = AccountReference.SHARED,
+            savingsGoalId = "non_existent_goal",
+        )
+        assertFailsWith<IllegalArgumentException> {
+            Family(
+                id = "fam_1",
+                name = "Familia Pérez",
+                movements = listOf(invalidWithdrawal),
+            )
+        }
+    }
+
+    @Test
+    fun testRejectionOfSavingsDepositWithMismatchedSourceAccount() {
+        val goal = SavingsGoal(
+            id = "goal_shared",
+            name = "Meta Compartida",
+            targetAmount = Money(1000L),
+            accountRef = AccountReference.SHARED,
+        )
+        val member = Member(id = "mem_1", name = "Carlos")
+
+        // El depósito intenta usar la cuenta personal de Carlos como origen, pero la meta es compartida
+        val mismatchedDeposit = Movement(
+            id = "mov_dep_mismatch",
+            type = MovementType.SAVINGS_DEPOSIT,
+            amount = Money(200L),
+            description = "Depósito Mismatched",
+            categoryId = Category.SYSTEM_SAVINGS.id,
+            sourceAccountRef = AccountReference.personal("mem_1"),
+            savingsGoalId = "goal_shared",
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            Family(
+                id = "fam_1",
+                name = "Familia Pérez",
+                members = listOf(member),
+                savingsGoals = listOf(goal),
+                movements = listOf(mismatchedDeposit),
+            )
+        }
+    }
+
+    @Test
+    fun testRejectionOfSavingsWithdrawalWithMismatchedDestinationAccount() {
+        val goal = SavingsGoal(
+            id = "goal_shared",
+            name = "Meta Compartida",
+            targetAmount = Money(1000L),
+            accountRef = AccountReference.SHARED,
+        )
+        val member = Member(id = "mem_1", name = "Carlos")
+
+        // El retiro intenta enviar fondos a la cuenta personal de Carlos, pero la meta es compartida
+        val mismatchedWithdrawal = Movement(
+            id = "mov_with_mismatch",
+            type = MovementType.SAVINGS_WITHDRAWAL,
+            amount = Money(200L),
+            description = "Retiro Mismatched",
+            categoryId = Category.SYSTEM_SAVINGS.id,
+            destinationAccountRef = AccountReference.personal("mem_1"),
+            savingsGoalId = "goal_shared",
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            Family(
+                id = "fam_1",
+                name = "Familia Pérez",
+                members = listOf(member),
+                savingsGoals = listOf(goal),
+                movements = listOf(mismatchedWithdrawal),
+            )
+        }
+    }
+
+    @Test
+    fun testValidFamilyConstructionWithValidMovements() {
+        val member = Member(id = "mem_1", name = "Carlos")
+        val income = Movement(
+            id = "mov_inc_1",
+            type = MovementType.INCOME,
+            amount = Money.fromMajorUnits(1000L),
+            description = "Sueldo",
+            categoryId = Category.SYSTEM_INCOME.id,
+            destinationAccountRef = AccountReference.SHARED,
+        )
+        val transfer = Movement(
+            id = "mov_tr_1",
+            type = MovementType.TRANSFER,
+            amount = Money.fromMajorUnits(200L),
+            description = "Mesada",
+            categoryId = Category.SYSTEM_ALLOCATION.id,
+            sourceAccountRef = AccountReference.SHARED,
+            destinationAccountRef = AccountReference.personal("mem_1"),
+        )
+
+        val family = Family(
+            id = "fam_1",
+            name = "Familia Pérez",
+            members = listOf(member),
+            movements = listOf(income, transfer),
+        )
+
+        assertEquals(2, family.movements.size)
+        assertEquals("fam_1", family.id)
+    }
+
+    @Test
+    fun testEmptyFamilyConstructionIsValid() {
+        val emptyFamily = Family(id = "fam_empty", name = "Familia Vacía")
+        assertEquals(0, emptyFamily.members.size)
+        assertEquals(0, emptyFamily.savingsGoals.size)
+        assertEquals(0, emptyFamily.movements.size)
+        assertEquals(Money.ZERO, emptyFamily.totalFamilyMoney)
+    }
+
+    // --- 6. Operaciones dinámicas de dominio ---
 
     @Test
     fun testSharedToPersonalAllocationAndConservationOfTotalMoney() {
@@ -361,8 +561,6 @@ class DomainModelTest {
         }
     }
 
-    // --- 6. Depósitos y retiros en metas de ahorro ---
-
     @Test
     fun testRejectionOfDepositExceedingTargetAmount() {
         var family = Family(id = "fam_1", name = "Familia Pérez")
@@ -384,7 +582,6 @@ class DomainModelTest {
         )
         family = family.addSavingsGoal(goal)
 
-        // Depositar más de la meta fijada (600.000 > 500.000) debe fallar
         assertFailsWith<DomainException> {
             family.depositToSavingsGoal("goal_target_500", Money.fromMajorUnits(600_000L), "mov_dep_excess")
         }
@@ -412,7 +609,6 @@ class DomainModelTest {
         family = family.addSavingsGoal(goal)
         family = family.depositToSavingsGoal("goal_test", Money.fromMajorUnits(200_000L), "mov_dep_1")
 
-        // Retirar más de lo reservado actualmente (300.000 > 200.000) debe fallar
         assertFailsWith<InsufficientSavingsException> {
             family.withdrawFromSavingsGoal("goal_test", Money.fromMajorUnits(300_000L), "mov_with_excess")
         }
