@@ -44,6 +44,7 @@ class FamilyViewModel(
                 it.copy(
                     errorMessage = "El identificador de la familia no puede estar vacío.",
                     isLoading = false,
+                    hasSearched = false,
                 )
             }
             return
@@ -51,14 +52,16 @@ class FamilyViewModel(
 
         lastQueriedFamilyId = id
 
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                hasSearched = false,
+                errorMessage = null,
+                isCreatedSuccessfully = false
+            )
+        }
+
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null,
-                    isCreatedSuccessfully = false
-                )
-            }
             try {
                 val family = getFamilyUseCase(id)
                 _uiState.update {
@@ -75,7 +78,7 @@ class FamilyViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        hasSearched = true,
+                        hasSearched = false,
                         errorMessage = e.message ?: "Ocurrió un error al consultar la familia."
                     )
                 }
@@ -83,7 +86,7 @@ class FamilyViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        hasSearched = true,
+                        hasSearched = false,
                         errorMessage = e.message ?: "Parámetro inválido al consultar la familia."
                     )
                 }
@@ -91,7 +94,7 @@ class FamilyViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        hasSearched = true,
+                        hasSearched = false,
                         errorMessage = "Error inesperado al consultar la familia."
                     )
                 }
@@ -111,6 +114,7 @@ class FamilyViewModel(
                 it.copy(
                     errorMessage = "El ID y el nombre de la familia son requeridos.",
                     isLoading = false,
+                    hasSearched = false,
                     isCreatedSuccessfully = false
                 )
             }
@@ -119,21 +123,23 @@ class FamilyViewModel(
 
         lastQueriedFamilyId = id
 
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                hasSearched = false,
+                errorMessage = null,
+                isCreatedSuccessfully = false
+            )
+        }
+
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null,
-                    isCreatedSuccessfully = false
-                )
-            }
             try {
                 val createdFamily = createFamilyUseCase(id, name)
                 _uiState.update {
                     it.copy(
                         family = createdFamily,
                         isLoading = false,
-                        hasSearched = true,
+                        hasSearched = false,
                         isCreatedSuccessfully = true,
                         errorMessage = null
                     )
@@ -184,21 +190,23 @@ class FamilyViewModel(
     fun createFamily(family: Family) {
         lastQueriedFamilyId = family.id
 
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                hasSearched = false,
+                errorMessage = null,
+                isCreatedSuccessfully = false
+            )
+        }
+
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    errorMessage = null,
-                    isCreatedSuccessfully = false
-                )
-            }
             try {
                 val createdFamily = createFamilyUseCase(family)
                 _uiState.update {
                     it.copy(
                         family = createdFamily,
                         isLoading = false,
-                        hasSearched = true,
+                        hasSearched = false,
                         isCreatedSuccessfully = true,
                         errorMessage = null
                     )

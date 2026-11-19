@@ -92,6 +92,7 @@ class FamilyViewModelTest {
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
+        assertFalse(state.hasSearched)
         assertNotNull(state.errorMessage)
         assertEquals("El identificador de la familia no puede estar vacío.", state.errorMessage)
         assertFalse(state.isFamilyNotFound)
@@ -118,7 +119,7 @@ class FamilyViewModelTest {
         val state = failingViewModel.uiState.value
         assertNull(state.family)
         assertFalse(state.isLoading)
-        assertTrue(state.hasSearched)
+        assertFalse(state.hasSearched)
         assertEquals("Error inesperado al consultar la familia.", state.errorMessage)
         assertFalse(state.isFamilyNotFound)
     }
@@ -135,6 +136,7 @@ class FamilyViewModelTest {
 
         // 3. Validación de parámetro inválido -> isFamilyNotFound es false
         viewModel.loadFamily("  ")
+        assertFalse(viewModel.uiState.value.hasSearched)
         assertFalse(viewModel.uiState.value.isFamilyNotFound)
 
         // 4. Fallo por error técnico -> isFamilyNotFound es false
@@ -153,6 +155,7 @@ class FamilyViewModelTest {
 
         failingViewModel.loadFamily("fam_error")
         advanceUntilIdle()
+        assertFalse(failingViewModel.uiState.value.hasSearched)
         assertFalse(failingViewModel.uiState.value.isFamilyNotFound)
     }
 
@@ -166,7 +169,7 @@ class FamilyViewModelTest {
         assertEquals("fam_100", family.id)
         assertEquals("Familia Rodríguez", family.name)
         assertFalse(state.isLoading)
-        assertTrue(state.hasSearched)
+        assertFalse(state.hasSearched)
         assertTrue(state.isCreatedSuccessfully)
         assertNull(state.errorMessage)
 
@@ -330,5 +333,67 @@ class FamilyViewModelTest {
 
         viewModel.clearError()
         assertNull(viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
+    fun testBlankIdDoesNotPreservePreviousNotFoundResult() = runTest {
+        viewModel.loadFamily("fam_non_existent")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isFamilyNotFound)
+
+        viewModel.loadFamily(" ")
+
+        assertFalse(viewModel.uiState.value.hasSearched)
+        assertFalse(viewModel.uiState.value.isFamilyNotFound)
+    }
+
+    @Test
+    fun testClearErrorDoesNotRestorePreviousNotFoundResult() = runTest {
+        viewModel.loadFamily("fam_non_existent")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isFamilyNotFound)
+
+        viewModel.loadFamily("")
+        assertNotNull(viewModel.uiState.value.errorMessage)
+        viewModel.clearError()
+
+        assertFalse(viewModel.uiState.value.hasSearched)
+        assertFalse(viewModel.uiState.value.isFamilyNotFound)
+    }
+
+    @Test
+    fun testNewQueryClearsPreviousNotFoundResultWhileLoading() = runTest {
+        viewModel.loadFamily("fam_non_existent")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isFamilyNotFound)
+
+        val delayedRepo = object : FamilyRepository {
+            override suspend fun getFamilyById(id: String): Family? {
+                delay(100)
+                return Family(id, "Familia Encontrada")
+            }
+
+            override suspend fun createFamily(family: Family) {}
+            override suspend fun saveFamily(family: Family) {}
+        }
+        val delayedViewModel = FamilyViewModel(
+            GetFamilyUseCase(delayedRepo),
+            CreateFamilyUseCase(delayedRepo),
+        )
+        delayedViewModel.loadFamily("fam_1")
+        testScheduler.runCurrent()
+
+        assertFalse(delayedViewModel.uiState.value.hasSearched)
+        assertFalse(delayedViewModel.uiState.value.isFamilyNotFound)
+    }
+
+    @Test
+    fun testCreateFamilySuccessDoesNotMarkFamilyAsSearched() = runTest {
+        viewModel.createFamily("fam_500", "Familia Creada")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.isCreatedSuccessfully)
+        assertFalse(state.hasSearched)
     }
 }
