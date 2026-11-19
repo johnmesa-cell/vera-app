@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.vera_app.domain.model.DomainException
 import com.example.vera_app.domain.model.Family
 import com.example.vera_app.domain.model.FamilyAlreadyExistsException
-import com.example.vera_app.domain.model.FamilyNotFoundException
 import com.example.vera_app.domain.usecase.family.CreateFamilyUseCase
 import com.example.vera_app.domain.usecase.family.GetFamilyUseCase
 import kotlinx.coroutines.CancellationException
@@ -72,15 +71,6 @@ class FamilyViewModel(
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: FamilyNotFoundException) {
-                _uiState.update {
-                    it.copy(
-                        family = null,
-                        isLoading = false,
-                        hasSearched = true,
-                        errorMessage = null
-                    )
-                }
             } catch (e: DomainException) {
                 _uiState.update {
                     it.copy(

@@ -87,17 +87,18 @@ class FamilyViewModelTest {
     }
 
     @Test
-    fun testLoadFamilyWithBlankIdSetsError() = runTest {
+    fun testLoadFamilyWithBlankIdSetsErrorAndDoesNotFlagNotFound() = runTest {
         viewModel.loadFamily("   ")
 
         val state = viewModel.uiState.value
         assertFalse(state.isLoading)
         assertNotNull(state.errorMessage)
         assertEquals("El identificador de la familia no puede estar vacío.", state.errorMessage)
+        assertFalse(state.isFamilyNotFound)
     }
 
     @Test
-    fun testLoadFamilyHandlesRepositoryError() = runTest {
+    fun testLoadFamilyHandlesRepositoryErrorAndDoesNotFlagNotFound() = runTest {
         val failingRepo = object : FamilyRepository {
             override suspend fun getFamilyById(id: String): Family? {
                 throw IllegalStateException("Error de conexión con la base de datos.")
@@ -119,6 +120,40 @@ class FamilyViewModelTest {
         assertFalse(state.isLoading)
         assertTrue(state.hasSearched)
         assertEquals("Error inesperado al consultar la familia.", state.errorMessage)
+        assertFalse(state.isFamilyNotFound)
+    }
+
+    @Test
+    fun testIsFamilyNotFoundEvaluationRules() = runTest {
+        // 1. Sin consultar previamente -> isFamilyNotFound es false
+        assertFalse(viewModel.uiState.value.isFamilyNotFound)
+
+        // 2. Consulta exitosa de familia inexistente -> isFamilyNotFound es true
+        viewModel.loadFamily("inexistente")
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isFamilyNotFound)
+
+        // 3. Validación de parámetro inválido -> isFamilyNotFound es false
+        viewModel.loadFamily("  ")
+        assertFalse(viewModel.uiState.value.isFamilyNotFound)
+
+        // 4. Fallo por error técnico -> isFamilyNotFound es false
+        val failingRepo = object : FamilyRepository {
+            override suspend fun getFamilyById(id: String): Family? {
+                throw RuntimeException("Fallo en la BD")
+            }
+
+            override suspend fun createFamily(family: Family) {}
+            override suspend fun saveFamily(family: Family) {}
+        }
+        val failingViewModel = FamilyViewModel(
+            GetFamilyUseCase(failingRepo),
+            CreateFamilyUseCase(failingRepo),
+        )
+
+        failingViewModel.loadFamily("fam_error")
+        advanceUntilIdle()
+        assertFalse(failingViewModel.uiState.value.isFamilyNotFound)
     }
 
     @Test

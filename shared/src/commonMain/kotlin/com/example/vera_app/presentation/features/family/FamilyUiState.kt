@@ -23,5 +23,5 @@ data class FamilyUiState(
      * Propiedad calculada que indica si se ha ejecutado una búsqueda y la familia no fue encontrada.
      */
     val isFamilyNotFound: Boolean
-        get() = hasSearched && (family == null)
+        get() = hasSearched && (family == null) && (errorMessage == null)
 }
