@@ -363,28 +363,45 @@ class FamilyViewModelTest {
 
     @Test
     fun testNewQueryClearsPreviousNotFoundResultWhileLoading() = runTest {
-        viewModel.loadFamily("fam_non_existent")
-        advanceUntilIdle()
-        assertTrue(viewModel.uiState.value.isFamilyNotFound)
-
-        val delayedRepo = object : FamilyRepository {
+        var response: Family? = null
+        var shouldDelay = false
+        val controllableRepo = object : FamilyRepository {
             override suspend fun getFamilyById(id: String): Family? {
-                delay(100)
-                return Family(id, "Familia Encontrada")
+                if (shouldDelay) {
+                    delay(100)
+                }
+                return response
             }
 
             override suspend fun createFamily(family: Family) {}
             override suspend fun saveFamily(family: Family) {}
         }
-        val delayedViewModel = FamilyViewModel(
-            GetFamilyUseCase(delayedRepo),
-            CreateFamilyUseCase(delayedRepo),
+        val controllableViewModel = FamilyViewModel(
+            GetFamilyUseCase(controllableRepo),
+            CreateFamilyUseCase(controllableRepo),
         )
-        delayedViewModel.loadFamily("fam_1")
+
+        controllableViewModel.loadFamily("fam_non_existent")
+        advanceUntilIdle()
+        assertTrue(controllableViewModel.uiState.value.hasSearched)
+        assertTrue(controllableViewModel.uiState.value.isFamilyNotFound)
+
+        response = Family("fam_1", "Familia Encontrada")
+        shouldDelay = true
+        controllableViewModel.loadFamily("fam_1")
         testScheduler.runCurrent()
 
-        assertFalse(delayedViewModel.uiState.value.hasSearched)
-        assertFalse(delayedViewModel.uiState.value.isFamilyNotFound)
+        assertTrue(controllableViewModel.uiState.value.isLoading)
+        assertFalse(controllableViewModel.uiState.value.hasSearched)
+        assertFalse(controllableViewModel.uiState.value.isFamilyNotFound)
+
+        advanceUntilIdle()
+
+        val state = controllableViewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertTrue(state.hasSearched)
+        assertFalse(state.isFamilyNotFound)
+        assertEquals("fam_1", state.family?.id)
     }
 
     @Test
